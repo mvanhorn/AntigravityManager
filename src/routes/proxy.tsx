@@ -22,6 +22,14 @@ import {
   isImageProxyExampleModel,
 } from '@/modules/proxy-gateway/components/proxy-example-models';
 import {
+  CLAUDE_OPUS_MAPPING,
+  CLAUDE_SONNET_MAPPING,
+  buildClaudeMappingTargets,
+  resolveClaudeMappingTarget,
+  restoreDefaultClaudeMappings,
+  upsertClaudeMappingTarget,
+} from '@/modules/proxy-gateway/components/claude-model-mapping';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -68,35 +76,6 @@ function getExampleModelIcon(modelId: string): ReactNode {
     return <Zap size={14} />;
   }
   return <Cpu size={14} />;
-}
-
-const ANTHROPIC_ROUTE_OPTIONS = [
-  'claude-sonnet-4-6-thinking',
-  'claude-opus-4-6-thinking',
-  'gemini-3-flash',
-  'gemini-3.1-pro-low',
-  'gemini-3.1-pro-high',
-] as const;
-
-const DEFAULT_ANTHROPIC_MAPPING: Record<string, string> = {
-  'claude-sonnet-4-6-20260219': 'claude-sonnet-4-6-thinking',
-  'claude-sonnet-4-5-20250929': 'claude-sonnet-4-6-thinking',
-  'claude-opus-4-6-20260201': 'claude-opus-4-6-thinking',
-  opus: 'claude-opus-4-6-thinking',
-};
-
-function resolveAnthropicMappingValue(
-  anthropicMapping: Record<string, string>,
-  keys: string[],
-  fallback: string,
-): string {
-  for (const key of keys) {
-    const value = anthropicMapping[key];
-    if (value) {
-      return value;
-    }
-  }
-  return fallback;
 }
 
 function ProxyPage() {
@@ -189,6 +168,22 @@ function ProxyPage() {
   const [activeModelTab, setActiveModelTab] = useState('gemini-3.1-pro-high');
   const [copied, setCopied] = useState<string | null>(null);
   const exampleModels = useMemo(() => buildProxyExampleModels(cloudAccounts), [cloudAccounts]);
+  const sonnetMappingTarget = resolveClaudeMappingTarget(
+    proxyConfig?.model_aliases ?? [],
+    CLAUDE_SONNET_MAPPING,
+  );
+  const opusMappingTarget = resolveClaudeMappingTarget(
+    proxyConfig?.model_aliases ?? [],
+    CLAUDE_OPUS_MAPPING,
+  );
+  const sonnetMappingTargets = useMemo(
+    () => buildClaudeMappingTargets(exampleModels, sonnetMappingTarget),
+    [exampleModels, sonnetMappingTarget],
+  );
+  const opusMappingTargets = useMemo(
+    () => buildClaudeMappingTargets(exampleModels, opusMappingTarget),
+    [exampleModels, opusMappingTarget],
+  );
   const visibleExampleModels = useMemo(
     () =>
       selectedProtocol === 'anthropic'
@@ -203,19 +198,6 @@ function ProxyPage() {
   // Computed values for examples
   const apiKey = proxyConfig?.api_key || 'YOUR_API_KEY';
   const baseUrl = `http://localhost:${proxyConfig?.port || 8045}`;
-
-  const updateAnthropicMapping = (mappingPatch: Record<string, string>) => {
-    if (!proxyConfig) {
-      return;
-    }
-    updateProxyConfig({
-      ...proxyConfig,
-      anthropic_mapping: {
-        ...proxyConfig.anthropic_mapping,
-        ...mappingPatch,
-      },
-    });
-  };
 
   const copyToClipboard = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
@@ -570,15 +552,15 @@ print(response.choices[0].message.content)`;
                 {t('proxy.mapping.maps_to')}
               </p>
               <Select
-                value={resolveAnthropicMappingValue(
-                  proxyConfig.anthropic_mapping,
-                  ['claude-sonnet-4-6-20260219', 'claude-sonnet-4-5-20250929'],
-                  'claude-sonnet-4-6-thinking',
-                )}
+                value={sonnetMappingTarget}
                 onValueChange={(value) =>
-                  updateAnthropicMapping({
-                    'claude-sonnet-4-6-20260219': value,
-                    'claude-sonnet-4-5-20250929': value,
+                  updateProxyConfig({
+                    ...proxyConfig,
+                    model_aliases: upsertClaudeMappingTarget(
+                      proxyConfig.model_aliases,
+                      CLAUDE_SONNET_MAPPING,
+                      value,
+                    ),
                   })
                 }
               >
@@ -586,7 +568,7 @@ print(response.choices[0].message.content)`;
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ANTHROPIC_ROUTE_OPTIONS.map((option) => (
+                  {sonnetMappingTargets.map((option) => (
                     <SelectItem key={option} value={option}>
                       {option}
                     </SelectItem>
@@ -607,15 +589,15 @@ print(response.choices[0].message.content)`;
                 {t('proxy.mapping.maps_to')}
               </p>
               <Select
-                value={resolveAnthropicMappingValue(
-                  proxyConfig.anthropic_mapping,
-                  ['claude-opus-4-6-20260201', 'opus'],
-                  'claude-opus-4-6-thinking',
-                )}
+                value={opusMappingTarget}
                 onValueChange={(value) =>
-                  updateAnthropicMapping({
-                    'claude-opus-4-6-20260201': value,
-                    opus: value,
+                  updateProxyConfig({
+                    ...proxyConfig,
+                    model_aliases: upsertClaudeMappingTarget(
+                      proxyConfig.model_aliases,
+                      CLAUDE_OPUS_MAPPING,
+                      value,
+                    ),
                   })
                 }
               >
@@ -623,7 +605,7 @@ print(response.choices[0].message.content)`;
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ANTHROPIC_ROUTE_OPTIONS.map((option) => (
+                  {opusMappingTargets.map((option) => (
                     <SelectItem key={option} value={option}>
                       {option}
                     </SelectItem>
@@ -640,7 +622,7 @@ print(response.choices[0].message.content)`;
               onClick={() =>
                 updateProxyConfig({
                   ...proxyConfig,
-                  anthropic_mapping: { ...DEFAULT_ANTHROPIC_MAPPING },
+                  model_aliases: restoreDefaultClaudeMappings(proxyConfig.model_aliases),
                 })
               }
             >
